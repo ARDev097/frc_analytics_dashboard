@@ -3,6 +3,7 @@
 import { DataStoreProvider, useDataStore } from "@/lib/data-store";
 import { LoadingScreen } from "@/components/loading-screen";
 import { Navigation } from "@/components/navigation";
+import { DesktopNotice } from "@/components/desktop-notice";
 import type { ReactNode } from "react";
 
 function AppContent({ children }: { children: ReactNode }) {
@@ -30,6 +31,7 @@ function AppContent({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
+      <DesktopNotice />
       {children}
     </div>
   );
