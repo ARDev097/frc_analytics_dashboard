@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useDeferredValue, useMemo } from "react";
 import { useDataStore } from "@/lib/data-store";
 import {
   calculateDistrictRankings,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/data-utils";
 import { STANDARDS } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import {
   BarChart,
   Bar,
@@ -139,30 +140,44 @@ function GradeTooltip({
 
 export function DistrictComparison() {
   const { fees, filters, setFilters } = useDataStore();
+  const deferredFilters = useDeferredValue(filters);
+  const isUpdating =
+    `${filters.district}|${filters.board}|${filters.medium}|${filters.academicYear}|${filters.standardId}` !==
+    `${deferredFilters.district}|${deferredFilters.board}|${deferredFilters.medium}|${deferredFilters.academicYear}|${deferredFilters.standardId}`;
 
   const districtRankings = useMemo(
     () =>
       calculateDistrictRankings(
         fees,
-        filters.board,
-        filters.medium,
-        filters.standardId,
-        filters.academicYear
+        deferredFilters.board,
+        deferredFilters.medium,
+        deferredFilters.standardId,
+        deferredFilters.academicYear
       ),
-    [fees, filters.board, filters.standardId, filters.academicYear, filters.medium]
+    [fees, deferredFilters.board, deferredFilters.standardId, deferredFilters.academicYear, deferredFilters.medium]
   );
 
   const gradeSupply = useMemo(
     () =>
-      calculateGradeSupply(fees, filters.district, filters.board, filters.medium, filters.academicYear),
-    [fees, filters.district, filters.board, filters.academicYear, filters.medium]
+      calculateGradeSupply(fees, deferredFilters.district, deferredFilters.board, deferredFilters.medium, deferredFilters.academicYear),
+    [fees, deferredFilters.district, deferredFilters.board, deferredFilters.academicYear, deferredFilters.medium]
   );
 
   const stateWideAvg = useMemo(
     () =>
-      getStateWideAverage(fees, filters.board, filters.medium, filters.standardId, filters.academicYear),
-    [fees, filters.board, filters.standardId, filters.academicYear, filters.medium]
+      getStateWideAverage(fees, deferredFilters.board, deferredFilters.medium, deferredFilters.standardId, deferredFilters.academicYear),
+    [fees, deferredFilters.board, deferredFilters.standardId, deferredFilters.academicYear, deferredFilters.medium]
   );
+
+  const xDomainMax = useMemo(() => {
+    const maxVal = Math.max(
+      stateWideAvg || 0,
+      ...districtRankings.map((d) => d.typicalFee || 0),
+      0
+    );
+    // round up to nearest 5k for nicer tick spacing
+    return Math.max(5000, Math.ceil(maxVal / 5000) * 5000);
+  }, [districtRankings, stateWideAvg]);
 
   const gradeSupplyChartHeight = useMemo(() => {
     // Give each label enough vertical room; keep a sensible minimum.
@@ -176,10 +191,10 @@ export function DistrictComparison() {
 
   // Find current district rank
   const currentDistrictRank = districtRankings.findIndex(
-    (d) => d.district === filters.district
+    (d) => d.district === deferredFilters.district
   );
   const selectedStandard = STANDARDS.find(
-    (s) => s.standard_id === filters.standardId
+    (s) => s.standard_id === deferredFilters.standardId
   );
 
   // Get color for grade supply bar
@@ -190,7 +205,8 @@ export function DistrictComparison() {
   };
 
   return (
-    <section className="space-y-4">
+    <LoadingOverlay show={isUpdating} label="Updating charts…">
+      <section className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold text-foreground">
           Gujarat District Comparison
@@ -219,74 +235,92 @@ export function DistrictComparison() {
               </p>
             ) : (
               <>
-                <div className="h-[520px] w-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                  <div style={{ height: districtChartHeight }} className="w-full">
+                {/* Scrollable plot area + fixed X-axis footer (so ticks never scroll away) */}
+                <div className="h-[520px] w-full">
+                  <div className="h-[462px] w-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                    <div style={{ height: districtChartHeight }} className="w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={districtRankings}
+                          layout="vertical"
+                          margin={{ top: 24, right: 12, left: 16, bottom: 10 }}
+                          barCategoryGap={6}
+                        >
+                          {/* Hide X-axis here; we render it once in the fixed footer */}
+                          <XAxis type="number" domain={[0, xDomainMax]} hide />
+                          <YAxis
+                            type="category"
+                            dataKey="district"
+                            stroke="#64748b"
+                            width={120}
+                            tickLine={false}
+                            tickMargin={8}
+                            tick={<SingleLineYAxisTick />}
+                          />
+                          <Tooltip content={<DistrictTooltip />} />
+                          <ReferenceLine
+                            x={stateWideAvg}
+                            stroke="#94a3b8"
+                            strokeDasharray="3 3"
+                            label={{
+                              value: "State Avg",
+                              position: "top",
+                              fill: "#94a3b8",
+                              fontSize: 10,
+                            }}
+                          />
+                          <Bar
+                            dataKey="typicalFee"
+                            radius={[0, 4, 4, 0]}
+                            cursor="pointer"
+                            onClick={(data) => {
+                              if (data && (data as any).district) {
+                                setFilters({ district: (data as any).district });
+                              }
+                            }}
+                          >
+                            {districtRankings.map((entry) => (
+                              <Cell
+                                key={entry.district}
+                                fill={
+                                  entry.district === deferredFilters.district
+                                    ? "#3b82f6"
+                                    : "#475569"
+                                }
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Fixed X axis */}
+                  <div className="h-[58px] w-full border-t border-border/60 px-2 pt-2">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
-                        data={districtRankings}
-                        layout="vertical"
-                        // Extra top/bottom margin so the "State Avg" label
-                        // and X-axis ticks are not clipped by the card border.
-                        margin={{ top: 24, right: 12, left: 16, bottom: 20 }}
-                        barCategoryGap={6}
+                        data={[{ v: 0 }]}
+                        margin={{ top: 0, right: 12, left: 140, bottom: 16 }}
                       >
                         <XAxis
                           type="number"
+                          dataKey="v"
+                          domain={[0, xDomainMax]}
                           tickFormatter={(val) => `₹${(val / 1000).toFixed(0)}K`}
                           stroke="#64748b"
                           fontSize={11}
-                          tickMargin={8}
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="district"
-                          stroke="#64748b"
-                          width={120}
                           tickLine={false}
-                          tickMargin={8}
-                          tick={<SingleLineYAxisTick />}
+                          axisLine
                         />
-                        <Tooltip content={<DistrictTooltip />} />
-                        <ReferenceLine
-                          x={stateWideAvg}
-                          stroke="#94a3b8"
-                          strokeDasharray="3 3"
-                          label={{
-                            value: "State Avg",
-                            position: "top",
-                            fill: "#94a3b8",
-                            fontSize: 10,
-                          }}
-                        />
-                        <Bar
-                          dataKey="typicalFee"
-                          radius={[0, 4, 4, 0]}
-                          cursor="pointer"
-                          onClick={(data) => {
-                            if (data && data.district) {
-                              setFilters({ district: data.district });
-                            }
-                          }}
-                        >
-                          {districtRankings.map((entry) => (
-                            <Cell
-                              key={entry.district}
-                              fill={
-                                entry.district === filters.district
-                                  ? "#3b82f6"
-                                  : "#475569"
-                              }
-                            />
-                          ))}
-                        </Bar>
+                        <YAxis type="category" dataKey="v" hide />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
-                {filters.district !== "All Gujarat" && currentDistrictRank >= 0 && (
+                {deferredFilters.district !== "All Gujarat" && currentDistrictRank >= 0 && (
                   <p className="mt-4 pt-1 text-sm text-muted-foreground text-center">
                     <span className="font-medium text-foreground">
-                      {filters.district}
+                      {deferredFilters.district}
                     </span>{" "}
                     ranks{" "}
                     <span className="font-medium text-foreground">
@@ -294,7 +328,7 @@ export function DistrictComparison() {
                       {currentDistrictRank === 0 ? "st" : currentDistrictRank === 1 ? "nd" : currentDistrictRank === 2 ? "rd" : "th"}
                     </span>{" "}
                     highest out of {districtRankings.length} districts for{" "}
-                    {filters.board} {selectedStandard?.standard_name}.
+                    {deferredFilters.board} {selectedStandard?.standard_name}.
                   </p>
                 )}
               </>
@@ -310,10 +344,10 @@ export function DistrictComparison() {
             </CardTitle>
             <p className="text-sm text-muted-foreground">
               Schools offering each grade in{" "}
-              {filters.district === "All Gujarat"
+              {deferredFilters.district === "All Gujarat"
                 ? "Gujarat"
-                : filters.district}{" "}
-              ({filters.board})
+                : deferredFilters.district}{" "}
+              ({deferredFilters.board})
             </p>
           </CardHeader>
           <CardContent className="p-0">
@@ -392,6 +426,7 @@ export function DistrictComparison() {
           </CardContent>
         </Card>
       </div>
-    </section>
+      </section>
+    </LoadingOverlay>
   );
 }

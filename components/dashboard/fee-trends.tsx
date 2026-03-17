@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useDataStore } from "@/lib/data-store";
 import {
   calculateFeeTrends,
@@ -12,6 +12,7 @@ import {
 } from "@/lib/data-utils";
 import { STANDARDS, CHART_COLORS } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +27,7 @@ import {
   Bar,
   Cell,
 } from "recharts";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function TrendTooltip({
   active,
@@ -81,48 +83,52 @@ function HistogramTooltip({
 
 export function FeeTrends() {
   const { fees, filters } = useDataStore();
+  const deferredFilters = useDeferredValue(filters);
+  const isUpdating =
+    `${filters.district}|${filters.board}|${filters.medium}|${filters.academicYear}|${filters.standardId}` !==
+    `${deferredFilters.district}|${deferredFilters.board}|${deferredFilters.medium}|${deferredFilters.academicYear}|${deferredFilters.standardId}`;
 
   const [compareMode, setCompareMode] = useState<"board" | "medium">("board");
 
   const trendsByBoard = useMemo(
     () =>
-      calculateFeeTrends(fees, filters.district, filters.standardId),
-    [fees, filters.district, filters.standardId]
+      calculateFeeTrends(fees, deferredFilters.district, deferredFilters.standardId),
+    [fees, deferredFilters.district, deferredFilters.standardId]
   );
 
   const trendsByMedium = useMemo(
     () =>
       calculateFeeTrendsByMedium(
         fees,
-        filters.district,
-        filters.standardId,
-        filters.board
+        deferredFilters.district,
+        deferredFilters.standardId,
+        deferredFilters.board
       ),
-    [fees, filters.district, filters.standardId, filters.board]
+    [fees, deferredFilters.district, deferredFilters.standardId, deferredFilters.board]
   );
 
   const increases = useMemo(
     () =>
       calculateIncreaseDistribution(
         fees,
-        filters.district,
-        filters.board,
-        filters.medium,
-        filters.standardId
+        deferredFilters.district,
+        deferredFilters.board,
+        deferredFilters.medium,
+        deferredFilters.standardId
       ),
-    [fees, filters.district, filters.board, filters.standardId, filters.medium]
+    [fees, deferredFilters.district, deferredFilters.board, deferredFilters.standardId, deferredFilters.medium]
   );
 
   const growth = useMemo(
     () =>
       calculateCumulativeGrowth(
         fees,
-        filters.district,
-        filters.board,
-        filters.medium,
-        filters.standardId
+        deferredFilters.district,
+        deferredFilters.board,
+        deferredFilters.medium,
+        deferredFilters.standardId
       ),
-    [fees, filters.district, filters.board, filters.standardId, filters.medium]
+    [fees, deferredFilters.district, deferredFilters.board, deferredFilters.standardId, deferredFilters.medium]
   );
 
   const growthByMedium = useMemo(() => {
@@ -146,7 +152,7 @@ export function FeeTrends() {
   }, [compareMode, fees, filters.district, filters.board, filters.standardId]);
 
   const selectedStandard = STANDARDS.find(
-    (s) => s.standard_id === filters.standardId
+    (s) => s.standard_id === deferredFilters.standardId
   );
 
   // Find most common increase bucket
@@ -156,7 +162,8 @@ export function FeeTrends() {
   );
 
   return (
-    <section className="space-y-4">
+    <LoadingOverlay show={isUpdating} label="Updating trends…">
+      <section className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold text-foreground">
           Fee Trends Over Time
@@ -176,9 +183,9 @@ export function FeeTrends() {
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             {selectedStandard?.standard_name} in{" "}
-            {filters.district === "All Gujarat"
+            {deferredFilters.district === "All Gujarat"
               ? "Gujarat"
-              : filters.district}
+              : deferredFilters.district}
           </p>
         </CardHeader>
         <CardContent>
@@ -188,6 +195,7 @@ export function FeeTrends() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setCompareMode("board")}
+                disabled
                 className={cn(
                   "h-7 px-3 text-xs font-medium",
                   compareMode === "board"
@@ -201,6 +209,7 @@ export function FeeTrends() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setCompareMode("medium")}
+                disabled
                 className={cn(
                   "h-7 px-3 text-xs font-medium",
                   compareMode === "medium"
@@ -212,131 +221,21 @@ export function FeeTrends() {
               </Button>
             </div>
           </div>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={compareMode === "board" ? trendsByBoard : trendsByMedium}
-                margin={{ top: 10, right: 30, left: 20, bottom: 5 }}
-              >
-                <XAxis
-                  dataKey="year"
-                  stroke="#64748b"
-                  fontSize={11}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="#64748b"
-                  fontSize={11}
-                  tickLine={false}
-                  tickFormatter={(val) => `₹${(val / 1000).toFixed(0)}K`}
-                />
-                <Tooltip content={<TrendTooltip />} />
-                <Legend
-                  verticalAlign="top"
-                  height={36}
-                  formatter={(value) => (
-                    <span className="text-sm text-foreground">{value}</span>
-                  )}
-                />
-                {compareMode === "board" ? (
-                  <>
-                    <Line
-                      type="monotone"
-                      dataKey="cbse"
-                      name="CBSE"
-                      stroke={CHART_COLORS.cbse}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                      connectNulls
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="gshseb"
-                      name="GSHSEB"
-                      stroke={CHART_COLORS.gshseb}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                      connectNulls
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="icse"
-                      name="ICSE"
-                      stroke={CHART_COLORS.icse}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                      connectNulls
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Line
-                      type="monotone"
-                      dataKey="english"
-                      name="English"
-                      stroke={CHART_COLORS.english}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                      connectNulls
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="gujarati"
-                      name="Gujarati"
-                      stroke={CHART_COLORS.gujarati}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                      connectNulls
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="hindi"
-                      name="Hindi"
-                      stroke={CHART_COLORS.hindi}
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                      connectNulls
-                    />
-                  </>
-                )}
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="flex h-[300px] w-full flex-col items-center justify-center gap-4 rounded-lg border border-border/60 bg-muted/10 px-6 text-center">
+            <div className="space-y-2">
+              <div className="text-lg font-semibold text-foreground">
+                Coming soon
+              </div>
+              <div className="text-sm text-muted-foreground">
+                We’re polishing this interactive trends view for a smoother experience.
+              </div>
+            </div>
+            <div className="w-full max-w-md space-y-3">
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-11/12" />
+              <Skeleton className="h-3 w-10/12" />
+            </div>
           </div>
-          {compareMode === "board" && growth && (
-            <p className="mt-3 text-sm text-muted-foreground">
-              {filters.board} fees in{" "}
-              {filters.district === "All Gujarat" ? "Gujarat" : filters.district}{" "}
-              have grown{" "}
-              <span className="font-medium text-foreground">
-                {formatPercent(growth.totalGrowth)}
-              </span>{" "}
-              since {growth.startYear}, averaging{" "}
-              <span className="font-medium text-foreground">
-                {formatPercent(growth.avgYearlyGrowth)}
-              </span>{" "}
-              per year.
-            </p>
-          )}
-          {compareMode === "medium" && growthByMedium?.growth && (
-            <p className="mt-3 text-sm text-muted-foreground">
-              In {filters.board} schools in{" "}
-              {filters.district === "All Gujarat" ? "Gujarat" : filters.district},{" "}
-              <span className="font-medium text-foreground">
-                {growthByMedium.medium}
-              </span>{" "}
-              medium shows the fastest growth:{" "}
-              <span className="font-medium text-foreground">
-                {formatPercent(growthByMedium.growth.totalGrowth)}
-              </span>{" "}
-              since {growthByMedium.growth.startYear}.
-            </p>
-          )}
         </CardContent>
       </Card>
 
@@ -406,6 +305,7 @@ export function FeeTrends() {
           )}
         </CardContent>
       </Card>
-    </section>
+      </section>
+    </LoadingOverlay>
   );
 }

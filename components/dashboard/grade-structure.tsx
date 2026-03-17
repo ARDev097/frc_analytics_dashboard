@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useDataStore } from "@/lib/data-store";
 import {
   calculateGradeFeeStructure,
@@ -13,6 +13,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import { STANDARDS } from "@/lib/constants";
 import {
   Table,
@@ -33,18 +34,22 @@ import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 export function GradeStructure() {
   const { fees, filters, setFilters } = useDataStore();
+  const deferredFilters = useDeferredValue(filters);
+  const isUpdating =
+    `${filters.district}|${filters.board}|${filters.medium}|${filters.academicYear}|${filters.standardId}` !==
+    `${deferredFilters.district}|${deferredFilters.board}|${deferredFilters.medium}|${deferredFilters.academicYear}|${deferredFilters.standardId}`;
   const [proposedFees, setProposedFees] = useState<Record<number, string>>({});
 
   const gradeStructure = useMemo(
     () =>
       calculateGradeFeeStructure(
         fees,
-        filters.district,
-        filters.board,
-        filters.medium,
-        filters.academicYear
+        deferredFilters.district,
+        deferredFilters.board,
+        deferredFilters.medium,
+        deferredFilters.academicYear
       ),
-    [fees, filters.district, filters.board, filters.medium, filters.academicYear]
+    [fees, deferredFilters.district, deferredFilters.board, deferredFilters.medium, deferredFilters.academicYear]
   );
 
   // Calculate snapshot for each grade to determine tiers
@@ -54,14 +59,14 @@ export function GradeStructure() {
       if (grade.schoolCount > 0) {
         const gradeFees = applyFilters(
           fees,
-          { ...filters, standardId: grade.standardId },
-          filters.academicYear
+          { ...deferredFilters, standardId: grade.standardId },
+          deferredFilters.academicYear
         );
         snapshots[grade.standardId] = calculateMarketSnapshot(gradeFees);
       }
     });
     return snapshots;
-  }, [fees, filters, gradeStructure]);
+  }, [fees, deferredFilters, gradeStructure]);
 
   // Get tier badge color
   const getTierBadge = (tier: string) => {
@@ -147,12 +152,12 @@ export function GradeStructure() {
   }, [flaggedTransitionsCount]);
 
   const selectedStandard = useMemo(
-    () => STANDARDS.find((s) => s.standard_id === filters.standardId),
-    [filters.standardId]
+    () => STANDARDS.find((s) => s.standard_id === deferredFilters.standardId),
+    [deferredFilters.standardId]
   );
 
   const topSchools = useMemo(() => {
-    const segmentFees = applyFilters(fees, filters, filters.academicYear).filter(
+    const segmentFees = applyFilters(fees, deferredFilters, deferredFilters.academicYear).filter(
       (f) => f.approved_fee !== null && f.approved_fee > 0
     );
     const sorted = [...segmentFees].sort(
@@ -162,20 +167,21 @@ export function GradeStructure() {
       highest: sorted.slice(0, 5),
       lowest: [...sorted].reverse().slice(0, 5),
     };
-  }, [fees, filters]);
+  }, [fees, deferredFilters]);
 
   return (
     <TooltipProvider>
-      <section className="space-y-4">
+      <LoadingOverlay show={isUpdating} label="Updating grade table…">
+        <section className="space-y-4">
         <div>
           <h2 className="text-xl font-semibold text-foreground">
             Grade-by-Grade Fee Structure
           </h2>
           <p className="text-sm text-muted-foreground">
             Fee breakdown by grade for {filters.board} schools in{" "}
-            {filters.district === "All Gujarat"
+            {deferredFilters.district === "All Gujarat"
               ? "Gujarat"
-              : filters.district}
+              : deferredFilters.district}
           </p>
         </div>
 
@@ -228,7 +234,7 @@ export function GradeStructure() {
                       proposedFeeNum
                     );
                     const jumpIsEvaluated = Boolean(jumpWarning);
-                    const isSelected = filters.standardId === grade.standardId;
+                    const isSelected = deferredFilters.standardId === grade.standardId;
 
                     return (
                       <TableRow
@@ -364,8 +370,8 @@ export function GradeStructure() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-medium text-foreground">
               Highest &amp; Lowest Fee Schools in{" "}
-              {filters.district === "All Gujarat" ? "Gujarat" : filters.district}{" "}
-              for {filters.board} {selectedStandard?.standard_name}
+              {deferredFilters.district === "All Gujarat" ? "Gujarat" : deferredFilters.district}{" "}
+              for {deferredFilters.board} {selectedStandard?.standard_name}
             </CardTitle>
           </CardHeader>
           <CardContent className="pb-4">
@@ -460,7 +466,8 @@ export function GradeStructure() {
             </div>
           </CardContent>
         </Card>
-      </section>
+        </section>
+      </LoadingOverlay>
     </TooltipProvider>
   );
 }

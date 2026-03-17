@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useDataStore } from "@/lib/data-store";
 import {
   applyFilters,
@@ -13,16 +13,21 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import { TrendingUp, Building2, IndianRupee, BarChart2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function MarketSnapshot() {
   const { fees, filters } = useDataStore();
+  const deferredFilters = useDeferredValue(filters);
+  const isUpdating =
+    `${filters.district}|${filters.board}|${filters.medium}|${filters.academicYear}|${filters.standardId}` !==
+    `${deferredFilters.district}|${deferredFilters.board}|${deferredFilters.medium}|${deferredFilters.academicYear}|${deferredFilters.standardId}`;
   const [proposedFee, setProposedFee] = useState<string>("");
 
   const filteredFees = useMemo(
-    () => applyFilters(fees, filters, filters.academicYear),
-    [fees, filters]
+    () => applyFilters(fees, deferredFilters, deferredFilters.academicYear),
+    [fees, deferredFilters]
   );
 
   const snapshot = useMemo(
@@ -34,12 +39,12 @@ export function MarketSnapshot() {
     () =>
       calculateCumulativeGrowth(
         fees,
-        filters.district,
-        filters.board,
-        filters.medium,
-        filters.standardId
+        deferredFilters.district,
+        deferredFilters.board,
+        deferredFilters.medium,
+        deferredFilters.standardId
       ),
-    [fees, filters]
+    [fees, deferredFilters]
   );
 
   const proposedFeeNum = parseFloat(proposedFee.replace(/,/g, "")) || 0;
@@ -110,7 +115,8 @@ export function MarketSnapshot() {
   };
 
   return (
-    <section className="space-y-4">
+    <LoadingOverlay show={isUpdating} label="Updating metrics…">
+      <section className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold text-foreground">Market Snapshot</h2>
         <p className="text-sm text-muted-foreground">
@@ -172,7 +178,7 @@ export function MarketSnapshot() {
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              With approved fees in {filters.academicYear}
+              With approved fees in {deferredFilters.academicYear}
             </p>
           </CardContent>
         </Card>
@@ -294,6 +300,7 @@ export function MarketSnapshot() {
           )}
         </CardContent>
       </Card>
-    </section>
+      </section>
+    </LoadingOverlay>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useDataStore } from "@/lib/data-store";
 import {
   formatRupees,
@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +53,8 @@ import {
   BarChart,
   Bar,
   Cell,
+  CartesianGrid,
+  Label,
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { Search, Building2, TrendingUp, Scale, FileText, Download } from "lucide-react";
@@ -68,6 +71,46 @@ interface SchoolData {
   source_url: string;
 }
 
+function FeeDistributionTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: { start: number; end: number; count: number } }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0]!.payload;
+  return (
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 shadow-lg">
+      <p className="font-medium text-foreground">
+        {formatRupees(p.start)} – {formatRupees(p.end)}
+      </p>
+      <p className="text-sm text-muted-foreground">{p.count} schools</p>
+    </div>
+  );
+}
+
+function FrozenYearsTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const value = payload[0]!.value;
+  return (
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 shadow-lg">
+      <p className="font-medium text-foreground">{label}</p>
+      <p className="text-sm text-muted-foreground">
+        Change: {formatPercent(value, 0)}
+      </p>
+    </div>
+  );
+}
+
 export function MySchoolAnalysis() {
   const { fees, latestYear } = useDataStore();
   const [searchQuery, setSearchQuery] = useState("");
@@ -76,6 +119,11 @@ export function MySchoolAnalysis() {
     Record<number, string>
   >({});
   const [focusStandardId, setFocusStandardId] = useState<number>(8);
+  const deferredSelectedSchoolKey = useDeferredValue(selectedSchool?.school_key ?? "");
+  const deferredFocusStandardId = useDeferredValue(focusStandardId);
+  const isUpdatingCharts =
+    deferredSelectedSchoolKey !== (selectedSchool?.school_key ?? "") ||
+    deferredFocusStandardId !== focusStandardId;
   const roomBarRef = useRef<HTMLDivElement | null>(null);
   const [isDraggingPin, setIsDraggingPin] = useState(false);
 
@@ -1278,44 +1326,62 @@ export function MySchoolAnalysis() {
                     </p>
                   ) : (
                     <>
-                      <div className="relative mt-2 h-44 w-full">
-                        <div className="absolute inset-0 flex items-end gap-1">
-                          {feeHistogram.bins.map((b) => {
-                            const maxCount = Math.max(
-                              1,
-                              ...feeHistogram.bins.map((x) => x.count)
-                            );
-                            const h = (b.count / maxCount) * 100;
-                            return (
-                              <div
-                                key={b.start}
-                                className="flex-1 rounded-sm bg-slate-600/60"
-                                style={{ height: `${h}%` }}
-                                title={`${formatRupees(b.start)}–${formatRupees(
-                                  b.end
-                                )}: ${b.count}`}
+                      <LoadingOverlay show={isUpdatingCharts} label="Updating chart…">
+                        <div className="mt-2 h-64 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={feeHistogram.bins}
+                              margin={{ top: 12, right: 12, left: 28, bottom: 28 }}
+                              barCategoryGap={2}
+                            >
+                              <CartesianGrid
+                                stroke="#334155"
+                                strokeOpacity={0.25}
+                                vertical={false}
                               />
-                            );
-                          })}
+                              <XAxis
+                                dataKey="start"
+                                stroke="#64748b"
+                                fontSize={10}
+                                tickLine={false}
+                                interval="preserveStartEnd"
+                                tickFormatter={(v) => `₹${Math.round(Number(v) / 1000)}K`}
+                                label={{
+                                  value: "Fee (₹)",
+                                  position: "insideBottom",
+                                  offset: -18,
+                                  fill: "#94a3b8",
+                                  fontSize: 11,
+                                }}
+                              />
+                              <YAxis
+                                stroke="#64748b"
+                                fontSize={10}
+                                tickLine={false}
+                                allowDecimals={false}
+                                label={{
+                                  value: "Schools",
+                                  angle: -90,
+                                  position: "insideLeft",
+                                  offset: 0,
+                                  fill: "#94a3b8",
+                                  fontSize: 11,
+                                }}
+                              />
+                              <Tooltip content={<FeeDistributionTooltip />} />
+                              {proposedFeeNum > 0 && (
+                                <ReferenceLine
+                                  x={Math.floor(proposedFeeNum / 5000) * 5000}
+                                  stroke="hsl(var(--foreground))"
+                                  strokeOpacity={0.8}
+                                />
+                              )}
+                              <Bar dataKey="count" radius={[4, 4, 0, 0]} fill="#475569" />
+                            </BarChart>
+                          </ResponsiveContainer>
                         </div>
-                        {proposedFeeNum > 0 && (
-                          <div
-                            className="absolute bottom-0 top-0 w-0.5 bg-foreground"
-                            style={{
-                              left: `${Math.min(
-                                100,
-                                Math.max(
-                                  0,
-                                  ((proposedFeeNum - feeHistogram.min) /
-                                    (feeHistogram.max - feeHistogram.min)) *
-                                    100
-                                )
-                              )}%`,
-                            }}
-                          />
-                        )}
-                      </div>
-                      <p className="mt-3 text-sm text-muted-foreground">
+                      </LoadingOverlay>
+                      <p className="mt-2 text-sm text-muted-foreground">
                         {proposedFeeNum > 0 ? (
                           <>
                             <span className="font-medium text-foreground">
@@ -1443,34 +1509,61 @@ export function MySchoolAnalysis() {
                   </p>
                 ) : (
                   <>
-                    <div className="h-[220px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={frozenYears.map((y) => ({ ...y, label: y.year }))}
-                          margin={{ top: 10, right: 20, left: 20, bottom: 5 }}
-                        >
-                          <XAxis
-                            dataKey="label"
-                            stroke="#64748b"
-                            fontSize={11}
-                            tickLine={false}
-                          />
-                          <YAxis stroke="#64748b" fontSize={11} tickLine={false} />
-                          <Bar dataKey="changePct" radius={[4, 4, 0, 0]}>
-                            {frozenYears.map((y) => (
-                              <Cell
-                                key={y.year}
-                                fill={
-                                  Math.abs(y.changePct) < 0.0001
-                                    ? "#f59e0b"
-                                    : CHART_COLORS.cbse
-                                }
+                    <LoadingOverlay show={isUpdatingCharts} label="Updating chart…">
+                      <div className="h-[280px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={frozenYears.map((y) => ({ ...y, label: y.year }))}
+                            margin={{ top: 12, right: 16, left: 34, bottom: 28 }}
+                          >
+                            <CartesianGrid stroke="#334155" strokeOpacity={0.25} vertical={false} />
+                            <XAxis
+                              dataKey="label"
+                              stroke="#64748b"
+                              fontSize={11}
+                              tickLine={false}
+                              label={{
+                                value: "Academic year",
+                                position: "insideBottom",
+                                offset: -18,
+                                fill: "#94a3b8",
+                                fontSize: 11,
+                              }}
+                            />
+                            <YAxis
+                              stroke="#64748b"
+                              fontSize={11}
+                              tickLine={false}
+                              tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
+                            >
+                              <Label
+                                value="Fee change (%)"
+                                angle={-90}
+                                position="insideLeft"
+                                style={{
+                                  textAnchor: "middle",
+                                  fill: "#94a3b8",
+                                  fontSize: 11,
+                                }}
                               />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
+                            </YAxis>
+                            <Tooltip content={<FrozenYearsTooltip />} />
+                            <Bar dataKey="changePct" radius={[4, 4, 0, 0]}>
+                              {frozenYears.map((y) => (
+                                <Cell
+                                  key={y.year}
+                                  fill={
+                                    Math.abs(y.changePct) < 0.0001
+                                      ? "#f59e0b"
+                                      : CHART_COLORS.cbse
+                                  }
+                                />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </LoadingOverlay>
                     <p className="mt-3 text-sm text-muted-foreground">
                       {catchUpEntitlement ? (
                         <>
