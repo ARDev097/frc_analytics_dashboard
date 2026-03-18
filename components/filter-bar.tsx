@@ -125,10 +125,10 @@ export function FilterBar() {
           </div>
 
           {/* Year & summary */}
-          <div className="flex flex-wrap items-center justify-start gap-3 text-sm text-muted-foreground md:justify-end">
+          <div className="flex flex-1 flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground md:justify-end md:flex-1">
             {/* Academic Year selector (compact) */}
             <div className="flex items-center gap-2">
-              <span className="hidden text-xs font-medium text-muted-foreground md:inline">
+              <span className="text-xs font-medium text-muted-foreground">
                 Academic year
               </span>
               <Select
