@@ -1,12 +1,12 @@
 "use client";
 
-import { DataStoreProvider, useDataStore } from "@/lib/data-store";
+import { useDataStore } from "@/lib/data-store";
 import { LoadingScreen } from "@/components/loading-screen";
 import { Navigation } from "@/components/navigation";
 import { DesktopNotice } from "@/components/desktop-notice";
 import type { ReactNode } from "react";
 
-function AppContent({ children }: { children: ReactNode }) {
+export function AppWrapper({ children }: { children: ReactNode }) {
   const { isLoading, loadingProgress, loadingStage, error } = useDataStore();
 
   if (isLoading) {
@@ -34,13 +34,5 @@ function AppContent({ children }: { children: ReactNode }) {
       <DesktopNotice />
       {children}
     </div>
-  );
-}
-
-export function AppWrapper({ children }: { children: ReactNode }) {
-  return (
-    <DataStoreProvider>
-      <AppContent>{children}</AppContent>
-    </DataStoreProvider>
   );
 }
